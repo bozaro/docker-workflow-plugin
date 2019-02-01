@@ -108,7 +108,14 @@ public class FromFingerprintStep extends AbstractStepImpl {
                             continue;
                         }
                         if (line.startsWith("FROM ")) {
-                            fromImage = line.substring(5);
+                            String from = line.substring(5).trim();
+                            int indexAs = from.indexOf(" AS ");
+                            if (indexAs > 0) {
+                                from = from.substring(0, indexAs).trim();
+                            }
+                            if (fromImage == null) {
+                                fromImage = from;
+                            }
                             continue;
                         }
                     }
