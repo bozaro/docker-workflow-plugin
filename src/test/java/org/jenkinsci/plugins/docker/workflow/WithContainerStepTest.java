@@ -68,7 +68,7 @@ public class WithContainerStepTest {
     @Rule public RestartableJenkinsRule story = new RestartableJenkinsRule();
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     @Rule public LoggerRule logging = new LoggerRule();
-    
+
     @Test public void configRoundTrip() {
         story.addStep(new Statement() {
             @Override public void evaluate() throws Throwable {
@@ -96,6 +96,67 @@ public class WithContainerStepTest {
                     "}", true));
                 WorkflowRun b = story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
                 story.j.assertLogContains("Require method GET POST OPTIONS", b);
+            }
+        });
+    }
+
+    @Test public void entrypointSlow() {
+        story.addStep(new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                DockerTestUtil.assumeDocker();
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "prj");
+
+                FileUtils.write(new File(story.home, "workspace/prj/entry.sh"),
+                    "#!/bin/sh -ex\n" +
+                        "(sleep 2; echo > /tmp/ready)\n" +
+                        "exec \"$@\"");
+                FileUtils.write(new File(story.home, "workspace/prj/Dockerfile"),
+                    "FROM alpine:latest\n" +
+                        "COPY entry.sh /opt/bin/\n" +
+                        "RUN chmod +x /opt/bin/entry.sh\n" +
+                        "ENTRYPOINT [\"/opt/bin/entry.sh\"]\n" +
+                        "CMD [\"/bin/sh\"]");
+                System.out.println(story.home.getCanonicalPath());
+                p.setDefinition(new CpsFlowDefinition(
+                    "node {\n" +
+                        "  def image = docker.build('jenkins-entrypoint', '.')\n" +
+                        "  image.inside {\n" +
+                        "    sh 'cat /tmp/ready'\n" +
+                        "  }\n" +
+                        "}", true));
+                story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+            }
+        });
+    }
+
+    @Test public void  entrypointHealthcheck() {
+        story.addStep(new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                DockerTestUtil.assumeDocker();
+                WorkflowJob p = story.j.jenkins.createProject(WorkflowJob.class, "prj");
+
+                FileUtils.write(new File(story.home, "workspace/prj/entry.sh"),
+                    "#!/bin/sh -ex\n" +
+                        "(sleep 2; echo > /tmp/ready)&\n" +
+                        "exec \"$@\"");
+                FileUtils.write(new File(story.home, "workspace/prj/Dockerfile"),
+                    "FROM alpine:latest\n" +
+                        "COPY entry.sh /opt/bin/\n" +
+                        "RUN chmod +x /opt/bin/entry.sh\n" +
+                        "ENTRYPOINT [\"/opt/bin/entry.sh\"]\n" +
+                        "HEALTHCHECK --interval=1s CMD test -f /tmp/ready\n" +
+                        "CMD [\"/bin/sh\"]");
+                System.out.println(story.home.getCanonicalPath());
+                p.setDefinition(new CpsFlowDefinition(
+                    "node {\n" +
+                        "  def image = docker.build('jenkins-entrypoint', '.')\n" +
+                        "  image.inside {\n" +
+                        "    sh 'cat /tmp/ready'\n" +
+                        "  }\n" +
+                        "}", true));
+                story.j.assertBuildStatusSuccess(p.scheduleBuild2(0));
             }
         });
     }
